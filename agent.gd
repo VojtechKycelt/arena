@@ -13,6 +13,8 @@ var thrust = false
 # for a detailed description of its arguments and return value.
 func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2], 
 			_polygons: Array[PackedVector2Array], _neighbors: Array[Array]):
+	debug_path.default_color = Color.MAROON
+	debug_path.width = 7
 
 	#Tips and tricks
 	#DONE 1. find out in which navmesh polygon we are
@@ -29,35 +31,112 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	#	spin = randi_range(-1, 1)
 	#	thrust = bool(randi_range(0, 1))
 	
+	#TODO select gem only once and then after it is collected to new one so ship does not switch
+	#TODO Funnel algorithm of path
+	var selected_gem = find_closest_gem(_gems)
 	var ship_actual_polygon = find_polygon_with_point(ship.position,_polygons)
-	var gem_polygon = find_polygon_with_point(_gems[0], _polygons)
+	var gem_polygon = find_polygon_with_point(selected_gem, _polygons)
 	if ship_actual_polygon.value == null or gem_polygon.value == null:
 		return [spin, thrust, false]
 	
-	var path = find_polygon_path(ship_actual_polygon, gem_polygon, _polygons, _neighbors)
-	var points_path = find_closest_path(path, _polygons, ship.position, _gems[0])
-	debug_path.points = points_path
-	debug_path.default_color = Color.MAROON
+	var polygon_path = find_polygon_path(ship_actual_polygon, gem_polygon, _polygons, _neighbors)
 	
-	#1. turn ship to poimt
-	var next_point = points_path[1]
-	spin = calculate_ship_spin(ship,points_path[1])
+	var points_path = find_closest_path(polygon_path, _polygons, ship.position, selected_gem)
+	#debug_path.points = points_path
 	
-	var dist = ship.position.distance_to(next_point)
-	if (dist > 30):
+	
+	#1. turn ship to point
+	#var next_point = points_path[1]
+	spin = calculate_ship_spin2(ship,points_path[1])
+	#print(get_intersecting_walls(selected_gem,_walls))
+	#var dist = ship.position.distance_to(next_point)
+	#print(ship.velocity)
+	
+	var funnel_path = find_funnel_path(polygon_path, _polygons, selected_gem)
+	funnel_path.insert(0,ship.position)
+	debug_path.points = funnel_path
+	print("funnel_path")
+	print(funnel_path)
+
+	if spin == 0:
 		thrust = 1
 	else:
 		thrust = 0
+	thrust = 0
+	#spin = 1
+	#print("ship_rotation: " + str(ship.rotation))
+
+	
 	return [spin, thrust, false]
 
+func find_funnel_path(polygon_path, _polygons, selected_gem):
+	var pivot_points = []
+	var intersect_points = []
+	if polygon_path.size() < 2:
+		pivot_points.push_back(selected_gem)
+		return pivot_points
+	
+	#TODO WHILE CYCLE
+	for p1 in _polygons[polygon_path[0]]:
+		for p2 in _polygons[polygon_path[1]]:
+			if p1 == p2 and not p1 in intersect_points:
+				intersect_points.push_back(p1)
+	
+	var a1 = ship.position.angle_to(intersect_points[0])
+	var a2 = ship.position.angle_to(intersect_points[1])
+	var left_point
+	var right_point
+	if (angle_difference_radians(a1,a2) > 0):
+		left_point = intersect_points[0]
+		right_point = intersect_points[1]
+	else:
+		left_point = intersect_points[1]
+		right_point = intersect_points[0]
+
+	
+
+	return intersect_points
+
+func normalize_angle_radians(angle: float) -> float:
+	angle = fmod(angle + PI, 2 * PI)
+	if angle < -PI:
+		angle += 2 * PI
+	return angle
+	
+func angle_difference_radians(angle1: float, angle2: float) -> float:
+	var diff = normalize_angle_radians(angle2) - normalize_angle_radians(angle1)
+	if diff > PI:
+		diff -= 2 * PI
+	elif diff < -PI:
+		diff += 2 * PI
+	return diff
+
 func calculate_ship_spin(x: Node2D, y: Vector2) -> int:
+	#var dir_to_next_point = (x.position + x.velocity).angle_to_point(y)
 	var dir_to_next_point = x.position.angle_to_point(y)
-	if x.rotation > dir_to_next_point + 0.1 or x.rotation < dir_to_next_point - 0.1:
-		if dir_to_next_point > x.rotation:
-			return 1
-		else:
+
+	#print(dir_to_next_point)
+	#print("x.rotation: " + str(x.rotation))
+	
+	if x.rotation > dir_to_next_point + 0.05 or x.rotation < dir_to_next_point - 0.05:
+		if dir_to_next_point < x.rotation or dir_to_next_point > x.rotation:
 			return -1
+		else:
+			return 1
 	return 0
+	
+func calculate_ship_spin2(x: Node2D, y: Vector2) -> int:
+	var dir_to_next_point = (x.position + x.velocity).angle_to_point(y)
+	var rotation = wrapf(x.rotation, -PI, PI)  # Normalize the rotation
+	dir_to_next_point = wrapf(dir_to_next_point, -PI, PI)  # Normalize the target angle
+	
+	# Calculate the angular difference
+	var angle_diff = wrapf(dir_to_next_point - rotation, -PI, PI)
+	
+	if abs(angle_diff) > 0.05:  # If the difference is greater than the threshold
+		return -1 if angle_diff < 0 else 1
+	return 0
+
 
 
 func find_closest_path(polygon_path, _polygons, start, end):
@@ -120,7 +199,7 @@ func construct_path(path_map, start_index, end_index):
 	while current_index != start_index:
 		path.insert(0,current_index)
 		current_index = path_map.get(current_index)
-	#path.insert(0,start_index)
+	path.insert(0,start_index)
 	return path
 
 func find_polygon_with_point(point: Vector2, _polygons: Array[PackedVector2Array]):
@@ -134,6 +213,40 @@ func find_polygon_with_point(point: Vector2, _polygons: Array[PackedVector2Array
 		polygon_index += 1
 	return {"index": polygon_index, "value": result_polygon}
 
+func find_closest_gem(_gems):
+	var closest_gem_dist = 10000
+	var result_gem = null
+	for g in _gems:
+		var dist = ship.position.distance_to(g)
+		if dist < closest_gem_dist:
+			closest_gem_dist = dist
+			result_gem = g
+			
+	return result_gem	
+
+func get_intersecting_walls(selected_gem, _walls):
+	#not working yet
+	var dir_to_gem = ship.position.direction_to(selected_gem)
+	var dir_to_ship = selected_gem.direction_to(ship.position)
+	var dist_to_gem = ship.position.distance_to(selected_gem)
+	var walls_intersecting = []
+	for w in _walls:
+		var dir = w[0].direction_to(w[1])
+		var dist = w[0].distance_to(w[1])
+		var intersect_point = Geometry2D.line_intersects_line(ship.position,dir_to_gem,w[0], dir)
+		if intersect_point == null:
+			continue
+		if is_between(w[0],w[1], intersect_point):
+			walls_intersecting.push_back(w.duplicate())
+	return walls_intersecting
+
+func is_between(a,c,b):
+	var d1 = a.distance_to(c)
+	var d2 = b.distance_to(c)
+	var d3 = a.distance_to(b)
+	var epsilon = 2
+	return d1+d2 == d3
+	return d1 + d2 > d3 - epsilon and d1 + d2 < d3 + epsilon
 # Called every time the agent has bounced off a wall.
 func bounce():
 	return
