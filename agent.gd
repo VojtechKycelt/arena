@@ -34,12 +34,13 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	
 	var polygon_path = find_polygon_path(ship_actual_polygon, gem_polygon, _polygons, _neighbors)
 	var points_path = find_closest_path(polygon_path, _polygons, ship.position, selected_gem)
-	debug_path.points = points_path
-	var next_point = points_path[1]
+	var smoothened_path = smoothen_path(points_path,_walls)
+	debug_path.points = smoothened_path
+	var next_point = smoothened_path[1]
 	var dist_to_target = ship.position.distance_to(next_point)
 	#TODO for each point closer than 50 take next point
-	if dist_to_target < 50 and points_path.size() > 2:
-		next_point = points_path[2]
+	if dist_to_target < 50 and smoothened_path.size() > 2:
+		next_point = smoothened_path[2]
 	spin = calculate_ship_spin2(ship,next_point)
 	
 	
@@ -50,18 +51,53 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	dir_to_next_point = wrapf(dir_to_next_point, -PI, PI)  # Normalize the target angle
 	var angle_diff = wrapf(dir_to_next_point - rotation, -PI, PI)
 	
-	print("speed_dist: " + str(speed_dist))
-	print("angle_diff: " + str(abs(angle_diff)))
 	#SEED #1 - 595pts
 	if dist_to_target > 50 or (speed_dist > 1 and abs(angle_diff) < 0.05):
 		thrust = 1
 	else:
 		thrust = 0
 	
-
 	#!DEBUG
-	
+	#return [0, 0, false]
 	return [spin, thrust, false]
+
+func smoothen_path(points_path, _walls):
+	var smoothened_path = [points_path[0]]
+	var current_point = points_path[0]
+	var last_non_intersecting_point = points_path[1]
+	
+	for i in range(2, points_path.size()):
+		var p = points_path[i]
+		var intersecting = false
+		for w in _walls:
+			if do_segments_intersect(current_point,p,w[0], w[1]):
+				intersecting = true
+		if intersecting == false:
+			last_non_intersecting_point = p
+		else:
+			current_point = last_non_intersecting_point
+			smoothened_path.push_back(last_non_intersecting_point)
+	smoothened_path.push_back(points_path[points_path.size()-1])
+	return smoothened_path
+
+
+func do_segments_intersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2) -> bool:
+	# Směrové vektory úseček
+	var r = p2 - p1
+	var s = q2 - q1
+	
+	# Určení determinantu
+	var det = r.cross(s)
+	# Pokud je determinant 0, úsečky jsou rovnoběžné nebo kolineární
+	if det == 0:
+		return false
+
+	# Parametry t a u podle parametrických rovnic
+	var t = (q1 - p1).cross(s) / det
+	var u = (q1 - p1).cross(r) / det
+
+	# Pokud jsou t a u v rozsahu [0, 1], úsečky se protínají
+	return t >= 0 and t <= 1 and u >= 0 and u <= 1
 
 func calculate_ship_spin2(x: Node2D, y: Vector2) -> int:
 	var dist = x.position.distance_to(y)
