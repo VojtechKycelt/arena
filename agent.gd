@@ -7,17 +7,16 @@ var ticks = 0
 var spin = 0
 var thrust = false
 var selected_gem = null
+var _delta = 0
 #TODO at the beggining precompute shortest path that takes all the gems (dijkstra/astar)
-#TODO smoothen path if you see next point remove the point between
-#TODO thrust only when dist is bigger than velocity
+#TODO check path dist not euclidean dist if chosing closest gem
+
+func _process(delta: float) -> void:
+	_delta = delta
 
 func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2], 
 			_polygons: Array[PackedVector2Array], _neighbors: Array[Array]):
 	debug_path.default_color = Color.MAROON
-	
-	var mouse_pos = get_viewport().get_mouse_position()
-	var mouse_polygon = find_polygon_with_point(mouse_pos,_polygons)
-	
 	
 	if selected_gem == null:
 		selected_gem = find_closest_gem(_gems)
@@ -25,8 +24,17 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 		var possible_gem = find_closest_gem(_gems)
 		var dist_sg = ship.position.distance_to(selected_gem)
 		var dist_pg = ship.position.distance_to(possible_gem)
-		if (dist_pg < dist_sg + 100) and dist_pg < 200:
-			selected_gem = possible_gem
+		if (dist_pg < dist_sg + 100):# and dist_pg < 200:
+			var intersects = false
+			for w in _walls:
+				if segment_intersects_segment_with_offset(ship.position,possible_gem,w[0], w[1],ship.RADIUS):
+					intersects = true
+					break
+			if not intersects:
+				selected_gem = possible_gem
+	
+	var mouse_pos = get_viewport().get_mouse_position()
+	var mouse_polygon = find_polygon_with_point(mouse_pos,_polygons)
 	var ship_actual_polygon = find_polygon_with_point(ship.position,_polygons)
 	var gem_polygon = find_polygon_with_point(selected_gem, _polygons)
 	if ship_actual_polygon.value == null or gem_polygon.value == null:
@@ -37,28 +45,35 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	var smoothened_path = smoothen_path(points_path,_walls)
 	debug_path.points = smoothened_path
 	var next_point = smoothened_path[1]
-	var dist_to_target = ship.position.distance_to(next_point)
-	#TODO for each point closer than 50 take next point
-	if dist_to_target < 50 and smoothened_path.size() > 2:
-		next_point = smoothened_path[2]
-	spin = calculate_ship_spin2(ship,next_point)
 	
+	#var next_point = mouse_pos
+	
+	#var dist_to_target = ship.position.distance_to(next_point)
+	#TODO for each point closer than 50 take next point
+	for i in range(1,smoothened_path.size()-2):
+		var p = smoothened_path[i]
+		if ship.position.distance_to(p) < 30:
+			next_point = smoothened_path[i+1]
+	#if dist_to_target < 50 and smoothened_path.size() > 2:
+		#next_point = smoothened_path[2]
+
 	
 	#DEBUG
 	var speed_dist = (ship.position + ship.velocity).distance_to(ship.position)
 	var dir_to_next_point = (ship.position + ship.velocity).angle_to_point(next_point)
+	#var dir_to_next_point = (ship.position + (ship.velocity + Vector2.from_angle(ship.rotation) * ship.ACCEL * _delta)).angle_to_point(next_point)
+
 	var rotation = wrapf(ship.rotation, -PI, PI)  # Normalize the rotation
 	dir_to_next_point = wrapf(dir_to_next_point, -PI, PI)  # Normalize the target angle
 	var angle_diff = wrapf(dir_to_next_point - rotation, -PI, PI)
+	var speed = ship.velocity.length()
 	
-	#SEED #1 - 595pts
-	if dist_to_target > 50 or (speed_dist > 1 and abs(angle_diff) < 0.05):
+	if speed < 50 or (speed_dist > 0.1 and abs(angle_diff) < 0.03):
 		thrust = 1
 	else:
 		thrust = 0
+	spin = calculate_ship_spin(ship,next_point, thrust)
 	
-	#!DEBUG
-	#return [0, 0, false]
 	return [spin, thrust, false]
 
 func smoothen_path(points_path, _walls):
@@ -70,7 +85,7 @@ func smoothen_path(points_path, _walls):
 		var p = points_path[i]
 		var intersecting = false
 		for w in _walls:
-			if segment_intersects_segment_with_offset(current_point,p,w[0], w[1],30):
+			if segment_intersects_segment_with_offset(current_point,p,w[0], w[1],ship.RADIUS):
 				intersecting = true
 		if intersecting == false:
 			last_non_intersecting_point = p
@@ -86,18 +101,18 @@ func segment_intersects_segment_with_offset(p1: Vector2, p2: Vector2, q1: Vector
 	var q_dir = (q2 - q1).normalized()
 
 	# Kolmý vektor (pro offset)
-	var perp = Vector2(-q_dir.y, q_dir.x) * offset
-
+	var perp = Vector2(-q_dir.y, q_dir.x) * ship.RADIUS
+	var wall_width = 10
+	var perp2 = Vector2(-q_dir.y, q_dir.x) * (ship.RADIUS + wall_width)
+	
 	# Vytvoření obdélníku kolem druhé úsečky
 	var poly = [
-		q1 + perp,  # Levý horní roh
-		q2 + perp,  # Pravý horní roh
-		q2 - perp,  # Pravý dolní roh
-		q1 - perp   # Levý dolní roh
+		q1 + perp2 - q_dir * ship.RADIUS ,  # Levý horní roh
+		q2 + perp2 + q_dir * ship.RADIUS,  # Pravý horní roh
+		q2 - perp + q_dir * ship.RADIUS,  # Pravý dolní roh
+		q1 - perp - q_dir * ship.RADIUS   # Levý dolní roh
 	]
 	
-	
-
 	# Kontrola průniku první úsečky s polygonem (obdélníkem)
 	return is_segment_intersecting_polygon(p1, p2, poly)
 	
@@ -121,9 +136,9 @@ func do_segments_intersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2) -
 	return t >= 0 and t <= 1 and u >= 0 and u <= 1
 
 
-func calculate_ship_spin2(x: Node2D, y: Vector2) -> int:
+func calculate_ship_spin(x: Node2D, y: Vector2, thrust) -> int:
 	var dist = x.position.distance_to(y)
-	var dir_to_next_point = (x.position + x.velocity).angle_to_point(y)
+	var dir_to_next_point = (x.position + (x.velocity + Vector2.from_angle(x.rotation) * ship.ACCEL * _delta * thrust)).angle_to_point(y)
 	#if dist < 100:
 	#	dir_to_next_point = x.position.angle_to_point(y)
 	var rotation = wrapf(x.rotation, -PI, PI)  # Normalize the rotation
