@@ -8,6 +8,7 @@ var spin = 0
 var thrust = false
 var selected_gem = null
 var _delta = 0
+#TODO MAIN: funnel or not center points of next poly
 #TODO at the beggining precompute shortest path that takes all the gems (dijkstra/astar)
 #TODO check path dist not euclidean dist if chosing closest gem
 
@@ -68,7 +69,7 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	var angle_diff = wrapf(dir_to_next_point - rotation, -PI, PI)
 	var speed = ship.velocity.length()
 	
-	if speed < 50 or (speed_dist > 0.1 and abs(angle_diff) < 0.03):
+	if speed < 50 or (speed_dist > 0.1 and abs(angle_diff) < 0.01 * speed):
 		thrust = 1
 	else:
 		thrust = 0
