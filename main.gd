@@ -10,46 +10,46 @@ var scores = []
 var arena
 
 func _ready():
-    var args = OS.get_cmdline_user_args()
-    var i = 0
-    while i < args.size():
-        match args[i]:
-            '-seed':
-                i += 1
-                var nums = args[i].split(':')
-                random_seed = int(nums[0])
-                if nums.size() > 1:
-                    last_seed = int(nums[1])
-            _:
-                print('usage: godot -- [-seed <int>]')
-                get_tree().quit()
-        i += 1
-        
-    start_game()
+	var args = OS.get_cmdline_user_args()
+	var i = 0
+	while i < args.size():
+		match args[i]:
+			'-seed':
+				i += 1
+				var nums = args[i].split(':')
+				random_seed = int(nums[0])
+				if nums.size() > 1:
+					last_seed = int(nums[1])
+			_:
+				print('usage: godot -- [-seed <int>]')
+				get_tree().quit()
+		i += 1
+		
+	start_game()
 
 func start_game():
-    arena = Arena.instantiate()
-    if random_seed != -1:
-        print('running game with seed %d' % random_seed)
-        arena.random_seed = random_seed
-        arena.use_agent = true
+	arena = Arena.instantiate()
+	if random_seed != -1:
+		print('running game with seed %d' % random_seed)
+		arena.random_seed = random_seed
+		arena.use_agent = true
 
-    arena.game_over.connect(on_game_over)
-    add_child(arena)
+	arena.game_over.connect(on_game_over)
+	add_child(arena)
 
 func on_game_over():
-    if last_seed != -1:
-        scores.append(arena.score)
+	if last_seed != -1:
+		scores.append(arena.score)
 
-        if random_seed < last_seed:
-            remove_child(arena)
-            arena.queue_free()
-            random_seed += 1
-            start_game()
-        else:
-            var num_games = scores.size()
-            var sum = 0
-            for s in scores:
-                sum += s
-            print('scores: ' + str(scores))
-            print('average score (%d games): %.1f' % [num_games, 1.0 * sum / num_games])
+		if random_seed < last_seed:
+			remove_child(arena)
+			arena.queue_free()
+			random_seed += 1
+			start_game()
+		else:
+			var num_games = scores.size()
+			var sum = 0
+			for s in scores:
+				sum += s
+			print('scores: ' + str(scores))
+			print('average score (%d games): %.1f' % [num_games, 1.0 * sum / num_games])
