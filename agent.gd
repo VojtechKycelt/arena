@@ -70,7 +70,7 @@ func smoothen_path(points_path, _walls):
 		var p = points_path[i]
 		var intersecting = false
 		for w in _walls:
-			if do_segments_intersect(current_point,p,w[0], w[1]):
+			if segment_intersects_segment_with_offset(current_point,p,w[0], w[1],30):
 				intersecting = true
 		if intersecting == false:
 			last_non_intersecting_point = p
@@ -81,23 +81,45 @@ func smoothen_path(points_path, _walls):
 	return smoothened_path
 
 
+func segment_intersects_segment_with_offset(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2, offset: float) -> bool:
+	# Směrový vektor druhé úsečky
+	var q_dir = (q2 - q1).normalized()
+
+	# Kolmý vektor (pro offset)
+	var perp = Vector2(-q_dir.y, q_dir.x) * offset
+
+	# Vytvoření obdélníku kolem druhé úsečky
+	var poly = [
+		q1 + perp,  # Levý horní roh
+		q2 + perp,  # Pravý horní roh
+		q2 - perp,  # Pravý dolní roh
+		q1 - perp   # Levý dolní roh
+	]
+	
+	
+
+	# Kontrola průniku první úsečky s polygonem (obdélníkem)
+	return is_segment_intersecting_polygon(p1, p2, poly)
+	
+func is_segment_intersecting_polygon(p1: Vector2, p2: Vector2, polygon: Array) -> bool:
+	# Kontrola, zda úsečka protíná jakoukoli hranu polygonu
+	for i in range(polygon.size()):
+		var q1 = polygon[i]
+		var q2 = polygon[(i + 1) % polygon.size()]
+		if do_segments_intersect(p1, p2, q1, q2):
+			return true
+	return false
+
 func do_segments_intersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2) -> bool:
-	# Směrové vektory úseček
 	var r = p2 - p1
 	var s = q2 - q1
-	
-	# Určení determinantu
 	var det = r.cross(s)
-	# Pokud je determinant 0, úsečky jsou rovnoběžné nebo kolineární
 	if det == 0:
 		return false
-
-	# Parametry t a u podle parametrických rovnic
 	var t = (q1 - p1).cross(s) / det
 	var u = (q1 - p1).cross(r) / det
-
-	# Pokud jsou t a u v rozsahu [0, 1], úsečky se protínají
 	return t >= 0 and t <= 1 and u >= 0 and u <= 1
+
 
 func calculate_ship_spin2(x: Node2D, y: Vector2) -> int:
 	var dist = x.position.distance_to(y)
