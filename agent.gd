@@ -6,7 +6,7 @@ extends Node2D
 var ticks = 0
 var spin = 0
 var thrust = false
-
+var selected_gem = null
 #TODO at the beggining precompute shortest path that takes all the gems (dijkstra/astar)
 #TODO smoothen path if you see next point remove the point between
 #TODO thrust only when dist is bigger than velocity
@@ -18,7 +18,15 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	var mouse_pos = get_viewport().get_mouse_position()
 	var mouse_polygon = find_polygon_with_point(mouse_pos,_polygons)
 	
-	var selected_gem = find_closest_gem(_gems)
+	
+	if selected_gem == null:
+		selected_gem = find_closest_gem(_gems)
+	else:
+		var possible_gem = find_closest_gem(_gems)
+		var dist_sg = ship.position.distance_to(selected_gem)
+		var dist_pg = ship.position.distance_to(possible_gem)
+		if (dist_pg < dist_sg + 100) and dist_pg < 200:
+			selected_gem = possible_gem
 	var ship_actual_polygon = find_polygon_with_point(ship.position,_polygons)
 	var gem_polygon = find_polygon_with_point(selected_gem, _polygons)
 	if ship_actual_polygon.value == null or gem_polygon.value == null:
@@ -27,18 +35,39 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	var polygon_path = find_polygon_path(ship_actual_polygon, gem_polygon, _polygons, _neighbors)
 	var points_path = find_closest_path(polygon_path, _polygons, ship.position, selected_gem)
 	debug_path.points = points_path
-	spin = calculate_ship_spin2(ship,points_path[1])
+	var next_point = points_path[1]
+	var dist_to_target = ship.position.distance_to(next_point)
+	#TODO for each point closer than 50 take next point
+	if dist_to_target < 50 and points_path.size() > 2:
+		next_point = points_path[2]
+	spin = calculate_ship_spin2(ship,next_point)
+	
+	
 	#DEBUG
-
-	#debug_path.points = [ship.position, mouse_pos]
+	var speed_dist = (ship.position + ship.velocity).distance_to(ship.position)
+	var dir_to_next_point = (ship.position + ship.velocity).angle_to_point(next_point)
+	var rotation = wrapf(ship.rotation, -PI, PI)  # Normalize the rotation
+	dir_to_next_point = wrapf(dir_to_next_point, -PI, PI)  # Normalize the target angle
+	var angle_diff = wrapf(dir_to_next_point - rotation, -PI, PI)
+	
+	print("speed_dist: " + str(speed_dist))
+	print("angle_diff: " + str(abs(angle_diff)))
+	#SEED #1 - 595pts
+	if dist_to_target > 50 or (speed_dist > 1 and abs(angle_diff) < 0.05):
+		thrust = 1
+	else:
+		thrust = 0
 	
 
 	#!DEBUG
-	thrust = 1
+	
 	return [spin, thrust, false]
 
 func calculate_ship_spin2(x: Node2D, y: Vector2) -> int:
+	var dist = x.position.distance_to(y)
 	var dir_to_next_point = (x.position + x.velocity).angle_to_point(y)
+	#if dist < 100:
+	#	dir_to_next_point = x.position.angle_to_point(y)
 	var rotation = wrapf(x.rotation, -PI, PI)  # Normalize the rotation
 	dir_to_next_point = wrapf(dir_to_next_point, -PI, PI)  # Normalize the target angle
 	
@@ -140,6 +169,7 @@ func bounce():
 
 # Called every time a gem has been collected.
 func gem_collected():
+	selected_gem = null
 	return
 
 # Called every time a new level has been reached.
