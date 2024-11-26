@@ -11,7 +11,9 @@ var _delta = 0
 #TODO at the beggining precompute shortest path that takes all the gems (dijkstra/astar)
 #TODO check path dist not euclidean dist if chosing closest gem
 #TODO do not thrust if too fast
-
+#TODO do not check gem distance from our position but position + velocity
+#command line: /Users/sirwok/Downloads/Godot.app/Contents/MacOS/Godot
+#/Users/sirwok/Downloads/Godot.app/Contents/MacOS/Godot --fixed-fps 1 -- -seed 1:5
 func _process(delta: float) -> void:
 	_delta = delta
 
