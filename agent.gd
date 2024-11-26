@@ -9,8 +9,6 @@ var thrust = false
 var selected_gem = null
 var _delta = 0
 #TODO at the beggining precompute shortest path that takes all the gems (dijkstra/astar)
-#TODO check path dist not euclidean dist if chosing closest gem
-#TODO do not check gem distance from our position but position + velocity
 
 #command line: /Users/sirwok/Downloads/Godot.app/Contents/MacOS/Godot
 #/Users/sirwok/Downloads/Godot.app/Contents/MacOS/Godot --fixed-fps 1 -- -seed 1:5
@@ -74,7 +72,6 @@ func calculate_ship_thrust(next_point):
 
 	var speed = ship.velocity.length()
 	var dist = ship.position.distance_to(next_point)
-	#if speed < 50 or (speed_dist > 10 and abs(angle_diff) < 0.005 * speed):
 	if abs(angle_diff) < 0.05 and speed_dist > 10:
 		return 1
 	elif speed > 150 and abs(angle_diff) > PI/2:
