@@ -14,6 +14,7 @@ var _delta = 0
 #TODO do not check gem distance from our position but position + velocity
 #command line: /Users/sirwok/Downloads/Godot.app/Contents/MacOS/Godot
 #/Users/sirwok/Downloads/Godot.app/Contents/MacOS/Godot --fixed-fps 1 -- -seed 1:5
+
 func _process(delta: float) -> void:
 	_delta = delta
 
@@ -21,6 +22,8 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 			_polygons: Array[PackedVector2Array], _neighbors: Array[Array]):
 	debug_path.default_color = Color.MAROON
 	debug_path.width = 10
+	
+	#TARGET CHOICE
 	if selected_gem == null:
 		selected_gem = find_closest_gem(_gems)
 	else:
@@ -36,6 +39,7 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 			if not intersects:
 				selected_gem = possible_gem
 	
+	#CHECK IF THERE ARE NO GEMS OR SHIP OUTSIDE NAVMESH AREA
 	var mouse_pos = get_viewport().get_mouse_position()
 	var mouse_polygon = find_polygon_with_point(mouse_pos,_polygons)
 	var ship_actual_polygon = find_polygon_with_point(ship.position,_polygons)
@@ -43,13 +47,14 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	if ship_actual_polygon.value == null or gem_polygon.value == null:
 		return [1, 1, false]
 	
+	#FIND PATH
 	var polygon_path = find_polygon_path(ship_actual_polygon, gem_polygon, _polygons, _neighbors)
 	var points_path = find_closest_path(polygon_path, _polygons, ship.position, selected_gem)
 	var andrew_path = find_shady_andrew_closest_path(polygon_path,_polygons,ship.position,selected_gem)
 	var smoothened_path = smoothen_path(andrew_path,_walls)
-	debug_path.points = smoothened_path
 	var next_point = smoothened_path[1]
 	
+	#IF CLOSE TO NEXT POINT GO TO ANOTHER
 	if smoothened_path.size() > 2:
 		var p1 = smoothened_path[1]
 		var p2 = smoothened_path[2]
@@ -57,23 +62,37 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 		if d1 < 50:
 			next_point = p2
 	
-	var speed_dist = (ship.position + ship.velocity).distance_to(ship.position)
-	var dir_to_next_point = (ship.position + ship.velocity).angle_to_point(next_point)
+	#CALCULATE SPIN AND THRUST
+	thrust = calculate_ship_thrust(next_point)
+	spin = calculate_ship_spin(ship,next_point, thrust)
+	
+	debug_path.points = smoothened_path
+	return [spin, thrust, false]
 
+func count_path_dist(path):
+	var sum = 0
+	for i in range(0,path.size()-2):
+		sum += path[i].distance_to(path[i+1])
+	return sum
+
+func calculate_ship_thrust(next_point):
+	var speed_dist = (ship.position + ship.velocity).distance_to(next_point)
+	var dir_to_next_point = (ship.position + ship.velocity).angle_to_point(next_point)
 	var rotation = wrapf(ship.rotation, -PI, PI)  # Normalize the rotation
 	dir_to_next_point = wrapf(dir_to_next_point, -PI, PI)  # Normalize the target angle
 	var angle_diff = wrapf(dir_to_next_point - rotation, -PI, PI)
-	var speed = ship.velocity.length()
-	
-	#if speed < 50 or (speed_dist > 10 and abs(angle_diff) < 0.005 * speed):
-	if abs(angle_diff) < 0.05:
-		thrust = 1
-	else:
-		thrust = 0
-	spin = calculate_ship_spin(ship,next_point, thrust)
-	
-	return [spin, thrust, false]
 
+	var speed = ship.velocity.length()
+	var dist = ship.position.distance_to(next_point)
+	#if speed < 50 or (speed_dist > 10 and abs(angle_diff) < 0.005 * speed):
+	print("speed: " + str(speed))
+	if abs(angle_diff) < 0.05 and speed_dist > 10:
+		return 1
+	elif speed > 150 and abs(angle_diff) > PI/2:
+		return 1
+	else:
+		return 0
+	
 func smoothen_path(points_path, _walls):
 	var smoothened_path = [points_path[0]]
 	var current_point = points_path[0]
