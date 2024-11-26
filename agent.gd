@@ -8,9 +8,9 @@ var spin = 0
 var thrust = false
 var selected_gem = null
 var _delta = 0
-#TODO MAIN: funnel or not center points of next poly
 #TODO at the beggining precompute shortest path that takes all the gems (dijkstra/astar)
 #TODO check path dist not euclidean dist if chosing closest gem
+#TODO do not thrust if too fast
 
 func _process(delta: float) -> void:
 	_delta = delta
@@ -18,7 +18,7 @@ func _process(delta: float) -> void:
 func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2], 
 			_polygons: Array[PackedVector2Array], _neighbors: Array[Array]):
 	debug_path.default_color = Color.MAROON
-	
+	debug_path.width = 10
 	if selected_gem == null:
 		selected_gem = find_closest_gem(_gems)
 	else:
@@ -43,33 +43,28 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	
 	var polygon_path = find_polygon_path(ship_actual_polygon, gem_polygon, _polygons, _neighbors)
 	var points_path = find_closest_path(polygon_path, _polygons, ship.position, selected_gem)
-	var smoothened_path = smoothen_path(points_path,_walls)
+	var andrew_path = find_shady_andrew_closest_path(polygon_path,_polygons,ship.position,selected_gem)
+	var smoothened_path = smoothen_path(andrew_path,_walls)
 	debug_path.points = smoothened_path
 	var next_point = smoothened_path[1]
 	
-	#var next_point = mouse_pos
+	if smoothened_path.size() > 2:
+		var p1 = smoothened_path[1]
+		var p2 = smoothened_path[2]
+		var d1 = ship.position.distance_to(p1)
+		if d1 < 50:
+			next_point = p2
 	
-	#var dist_to_target = ship.position.distance_to(next_point)
-	#TODO for each point closer than 50 take next point
-	for i in range(1,smoothened_path.size()-2):
-		var p = smoothened_path[i]
-		if ship.position.distance_to(p) < 30:
-			next_point = smoothened_path[i+1]
-	#if dist_to_target < 50 and smoothened_path.size() > 2:
-		#next_point = smoothened_path[2]
-
-	
-	#DEBUG
 	var speed_dist = (ship.position + ship.velocity).distance_to(ship.position)
 	var dir_to_next_point = (ship.position + ship.velocity).angle_to_point(next_point)
-	#var dir_to_next_point = (ship.position + (ship.velocity + Vector2.from_angle(ship.rotation) * ship.ACCEL * _delta)).angle_to_point(next_point)
 
 	var rotation = wrapf(ship.rotation, -PI, PI)  # Normalize the rotation
 	dir_to_next_point = wrapf(dir_to_next_point, -PI, PI)  # Normalize the target angle
 	var angle_diff = wrapf(dir_to_next_point - rotation, -PI, PI)
 	var speed = ship.velocity.length()
 	
-	if speed < 50 or (speed_dist > 0.1 and abs(angle_diff) < 0.01 * speed):
+	#if speed < 50 or (speed_dist > 10 and abs(angle_diff) < 0.005 * speed):
+	if abs(angle_diff) < 0.05:
 		thrust = 1
 	else:
 		thrust = 0
@@ -91,8 +86,9 @@ func smoothen_path(points_path, _walls):
 		if intersecting == false:
 			last_non_intersecting_point = p
 		else:
-			current_point = last_non_intersecting_point
 			smoothened_path.push_back(last_non_intersecting_point)
+			current_point = last_non_intersecting_point
+	smoothened_path.push_back(last_non_intersecting_point)	
 	smoothened_path.push_back(points_path[points_path.size()-1])
 	return smoothened_path
 
@@ -164,7 +160,7 @@ func find_closest_path(polygon_path, _polygons, start, end):
 		var next_poly_index = polygon_path[i]
 		var next_poly = _polygons[next_poly_index]
 		
-		var intersect_point = find_intersection_mid_point(current_poly,next_poly)
+		var intersect_point = find_line_mid_point(current_poly,next_poly)
 		points_path.push_back(intersect_point)
 		current_poly = next_poly
 		#current_polygon = poly_index
@@ -173,7 +169,74 @@ func find_closest_path(polygon_path, _polygons, start, end):
 	points_path.push_back(end)
 	return points_path
 
-func find_intersection_mid_point(current_poly,next_poly):
+func find_shady_andrew_closest_path(polygon_path, _polygons, start, end):
+	var points_path = [end]
+	var size = polygon_path.size()
+	if size == 0:
+		points_path.push_back(end)
+		return points_path
+	var current_point = end
+	var current_poly = _polygons[polygon_path[size-1]]
+	for i in range(1,polygon_path.size()):
+		var next_poly = _polygons[polygon_path[size - 1 - i]]
+		
+		var intersect_point = find_shady_closest_point(ship, current_point, current_poly,next_poly)
+		points_path.insert(0,intersect_point)
+		current_poly = next_poly
+		current_point = intersect_point
+		#current_polygon = poly_index
+		
+	#points_path.push_back(next_point)
+	points_path.insert(0,start)
+	return points_path
+
+func find_shady_closest_point(ship, current_point, current_poly,next_poly):
+	var intersecting_points = []
+	for cp in current_poly:
+		for np in next_poly:
+			if cp == np and cp not in intersecting_points:
+				intersecting_points.push_back(cp)
+	if intersecting_points.size() != 2:
+		print("ERROR SIZE")
+	
+	var i_dir = (intersecting_points[1] - intersecting_points[0]).normalized()
+	var i_len = intersecting_points[0].distance_to(intersecting_points[1])
+	var new_x = intersecting_points[0] + i_dir * (i_len/10)
+	var new_y = intersecting_points[1] - i_dir * (i_len/10)
+	var mid_x = (ship.position.x + current_point.x) / 2
+	var mid_y = (ship.position.y + current_point.y) / 2
+	var mid_point = Vector2(mid_x,mid_y)
+	
+	var final_point = Geometry2D.get_closest_point_to_segment(mid_point,new_x, new_y)
+	
+	
+	return final_point
+
+
+
+func get_intersecting_segment(poly1,poly2):
+	var intersecting_points = []
+	for cp in poly1:
+		for np in poly2:
+			if cp == np and cp not in intersecting_points:
+				intersecting_points.push_back(cp)
+	if intersecting_points.size() != 2:
+		print("ERROR SIZE")
+	return intersecting_points
+
+func compare_angles(start: Vector2, x: Vector2, y: Vector2):
+	var a1 = start.angle_to_point(x)
+	var a2 = start.angle_to_point(y)
+	var rotation = wrapf(a1, -PI, PI)  # Normalize the rotation
+	a2 = wrapf(a2, -PI, PI)  # Normalize the target angle
+	var angle_diff = wrapf(a2 - rotation, -PI, PI)
+	print("a1: " + str(a1))
+	print("a2: " + str(a2))
+	if angle_diff > 0:
+		return [x,a1,y,a2] #X IS LEFT POINT
+	return [y,a2,x,a1] #X RIGHT POINT
+
+func find_line_mid_point(current_poly,next_poly):
 	var intersecting_points = []
 	for cp in current_poly:
 		for np in next_poly:
