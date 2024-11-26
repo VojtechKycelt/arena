@@ -10,8 +10,8 @@ var selected_gem = null
 var _delta = 0
 #TODO at the beggining precompute shortest path that takes all the gems (dijkstra/astar)
 #TODO check path dist not euclidean dist if chosing closest gem
-#TODO do not thrust if too fast
 #TODO do not check gem distance from our position but position + velocity
+
 #command line: /Users/sirwok/Downloads/Godot.app/Contents/MacOS/Godot
 #/Users/sirwok/Downloads/Godot.app/Contents/MacOS/Godot --fixed-fps 1 -- -seed 1:5
 
@@ -24,32 +24,22 @@ func action(_walls: Array[PackedVector2Array], _gems: Array[Vector2],
 	debug_path.width = 10
 	
 	#TARGET CHOICE
+	var ship_actual_polygon = find_polygon_with_point(ship.position,_polygons)
+	if ship_actual_polygon.value == null:
+		return [1, 1, false]
+
 	if selected_gem == null:
-		selected_gem = find_closest_gem(_gems)
-	else:
-		var possible_gem = find_closest_gem(_gems)
-		var dist_sg = ship.position.distance_to(selected_gem)
-		var dist_pg = ship.position.distance_to(possible_gem)
-		if (dist_pg < dist_sg + 100):# and dist_pg < 200:
-			var intersects = false
-			for w in _walls:
-				if segment_intersects_segment_with_offset(ship.position,possible_gem,w[0], w[1],ship.RADIUS):
-					intersects = true
-					break
-			if not intersects:
-				selected_gem = possible_gem
+		selected_gem = find_closest_gem(ship_actual_polygon,_gems,_polygons,_neighbors)
 	
 	#CHECK IF THERE ARE NO GEMS OR SHIP OUTSIDE NAVMESH AREA
 	var mouse_pos = get_viewport().get_mouse_position()
 	var mouse_polygon = find_polygon_with_point(mouse_pos,_polygons)
-	var ship_actual_polygon = find_polygon_with_point(ship.position,_polygons)
 	var gem_polygon = find_polygon_with_point(selected_gem, _polygons)
 	if ship_actual_polygon.value == null or gem_polygon.value == null:
 		return [1, 1, false]
 	
 	#FIND PATH
 	var polygon_path = find_polygon_path(ship_actual_polygon, gem_polygon, _polygons, _neighbors)
-	var points_path = find_closest_path(polygon_path, _polygons, ship.position, selected_gem)
 	var andrew_path = find_shady_andrew_closest_path(polygon_path,_polygons,ship.position,selected_gem)
 	var smoothened_path = smoothen_path(andrew_path,_walls)
 	var next_point = smoothened_path[1]
@@ -85,7 +75,6 @@ func calculate_ship_thrust(next_point):
 	var speed = ship.velocity.length()
 	var dist = ship.position.distance_to(next_point)
 	#if speed < 50 or (speed_dist > 10 and abs(angle_diff) < 0.005 * speed):
-	print("speed: " + str(speed))
 	if abs(angle_diff) < 0.05 and speed_dist > 10:
 		return 1
 	elif speed > 150 and abs(angle_diff) > PI/2:
@@ -157,8 +146,7 @@ func do_segments_intersect(p1: Vector2, p2: Vector2, q1: Vector2, q2: Vector2) -
 func calculate_ship_spin(x: Node2D, y: Vector2, thrust) -> int:
 	var dist = x.position.distance_to(y)
 	var dir_to_next_point = (x.position + (x.velocity + Vector2.from_angle(x.rotation) * ship.ACCEL * _delta * thrust)).angle_to_point(y)
-	#if dist < 100:
-	#	dir_to_next_point = x.position.angle_to_point(y)
+	
 	var rotation = wrapf(x.rotation, -PI, PI)  # Normalize the rotation
 	dir_to_next_point = wrapf(dir_to_next_point, -PI, PI)  # Normalize the target angle
 	
@@ -168,27 +156,6 @@ func calculate_ship_spin(x: Node2D, y: Vector2, thrust) -> int:
 	if abs(angle_diff) > 0.05:  # If the difference is greater than the threshold
 		return -1 if angle_diff < 0 else 1
 	return 0
-
-func find_closest_path(polygon_path, _polygons, start, end):
-	var points_path = [start]
-	if polygon_path.size() == 0:
-		points_path.push_back(end)
-		return points_path
-	
-	var current_poly_index = polygon_path[0]
-	var current_poly = _polygons[current_poly_index]
-	for i in range(1,polygon_path.size()):
-		var next_poly_index = polygon_path[i]
-		var next_poly = _polygons[next_poly_index]
-		
-		var intersect_point = find_line_mid_point(current_poly,next_poly)
-		points_path.push_back(intersect_point)
-		current_poly = next_poly
-		#current_polygon = poly_index
-		
-	#points_path.push_back(next_point)
-	points_path.push_back(end)
-	return points_path
 
 func find_shady_andrew_closest_path(polygon_path, _polygons, start, end):
 	var points_path = [end]
@@ -205,9 +172,7 @@ func find_shady_andrew_closest_path(polygon_path, _polygons, start, end):
 		points_path.insert(0,intersect_point)
 		current_poly = next_poly
 		current_point = intersect_point
-		#current_polygon = poly_index
 		
-	#points_path.push_back(next_point)
 	points_path.insert(0,start)
 	return points_path
 
@@ -233,8 +198,6 @@ func find_shady_closest_point(ship, current_point, current_poly,next_poly):
 	
 	return final_point
 
-
-
 func get_intersecting_segment(poly1,poly2):
 	var intersecting_points = []
 	for cp in poly1:
@@ -244,36 +207,10 @@ func get_intersecting_segment(poly1,poly2):
 	if intersecting_points.size() != 2:
 		print("ERROR SIZE")
 	return intersecting_points
-
-func compare_angles(start: Vector2, x: Vector2, y: Vector2):
-	var a1 = start.angle_to_point(x)
-	var a2 = start.angle_to_point(y)
-	var rotation = wrapf(a1, -PI, PI)  # Normalize the rotation
-	a2 = wrapf(a2, -PI, PI)  # Normalize the target angle
-	var angle_diff = wrapf(a2 - rotation, -PI, PI)
-	print("a1: " + str(a1))
-	print("a2: " + str(a2))
-	if angle_diff > 0:
-		return [x,a1,y,a2] #X IS LEFT POINT
-	return [y,a2,x,a1] #X RIGHT POINT
-
-func find_line_mid_point(current_poly,next_poly):
-	var intersecting_points = []
-	for cp in current_poly:
-		for np in next_poly:
-			if cp == np and cp not in intersecting_points:
-				intersecting_points.push_back(cp)
-	
-	if intersecting_points.size() != 2:
-		print("ERROR SIZE")
-	var new_x = (intersecting_points[0].x + intersecting_points[1].x) / 2
-	var new_y = (intersecting_points[0].y + intersecting_points[1].y) / 2
-	return Vector2(new_x,new_y)
 	
 
 func find_polygon_path(start_poly, end_poly, _polygons, _neighbors):
-	var queue = [start_poly] #push_back, pop_front, pop_back
-	#queue.push_back(start)
+	var queue = [start_poly]
 	var visited = []
 	var path_map = {}
 
@@ -310,11 +247,14 @@ func find_polygon_with_point(point: Vector2, _polygons: Array[PackedVector2Array
 		polygon_index += 1
 	return {"index": polygon_index, "value": result_polygon}
 
-func find_closest_gem(_gems):
-	var closest_gem_dist = 10000
+func find_closest_gem(ship_actual_polygon, _gems, _polygons, _neighbors):
+	var closest_gem_dist = 100000
 	var result_gem = null
 	for g in _gems:
-		var dist = ship.position.distance_to(g)
+		var gem_polygon = find_polygon_with_point(g, _polygons)
+		var polygon_path = find_polygon_path(ship_actual_polygon, gem_polygon, _polygons, _neighbors)
+		var andrew_path = find_shady_andrew_closest_path(polygon_path,_polygons,ship.position,g)
+		var dist = count_path_dist(andrew_path)
 		if dist < closest_gem_dist:
 			closest_gem_dist = dist
 			result_gem = g
